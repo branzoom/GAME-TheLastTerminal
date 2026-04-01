@@ -227,6 +227,13 @@
     .choice-btn::before { content:'> '; color:var(--green-dim); }
     .choice-btn:hover { background:rgba(0,255,65,.07); border-color:var(--green); color:#fff; }
     .choice-btn:disabled { opacity:.3; cursor:not-allowed; }
+    .choice-meta {
+      margin-top:4px; font-size:10px; color:var(--green-dim);
+      letter-spacing:.3px;
+    }
+    .risk-low { color:var(--green-dim); }
+    .risk-mid { color:var(--amber); }
+    .risk-high { color:var(--red); }
 
     /* Free text input */
     #input-row {
@@ -266,6 +273,21 @@
     .inv-empty { color:var(--green-dark); font-size:10px; font-style:italic; }
     #log-list { font-size:10px; color:var(--green-dim); display:flex; flex-direction:column; gap:3px; }
     .log-entry::before { content:'· '; }
+    .track-row {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:6px; font-size:10px;
+    }
+    .track-bar { width:90px; height:5px; background:var(--green-dark); border:1px solid var(--border); overflow:hidden; }
+    .track-fill { height:100%; transition:width .25s ease; }
+    #track-truth .track-fill { background:var(--blue); box-shadow:0 0 5px var(--blue); }
+    #track-bond .track-fill { background:var(--amber); box-shadow:0 0 5px var(--amber); }
+    #track-survival .track-fill { background:var(--green); box-shadow:0 0 5px var(--green); }
+    #director-note {
+      font-size:10px; color:var(--green-dim); line-height:1.5;
+      white-space:pre-wrap; min-height:40px;
+    }
+    #memory-list { font-size:10px; color:#8eb58e; display:flex; flex-direction:column; gap:4px; }
+    .memory-item::before { content:'↳ '; color:var(--green-dim); }
     .ai-ind {
       display:flex; align-items:center; gap:7px;
       padding:9px 13px; border-bottom:1px solid var(--border); font-size:10px;
@@ -390,6 +412,11 @@
       <input id="splash-api-key" class="retro-input" type="password" placeholder="粘贴你的 API Key..." autocomplete="off" spellcheck="false" />
       <div class="field-label" style="margin-top:8px">// 最大输出 Tokens（可选） //</div>
       <input id="max-tokens-input" class="retro-input" type="number" min="256" step="256" placeholder="留空=不主动限制（Anthropic 默认 8192）" />
+      <div class="field-label" style="margin-top:8px">// 叙事实验组（A/B） //</div>
+      <select id="narrative-mode-select">
+        <option value="aggressive">A / 激进叙事（高冲突高反转）</option>
+        <option value="stable">B / 稳定叙事（高连贯低跳跃）</option>
+      </select>
       <div class="ai-status-note" id="splash-ai-status">等待输入 Key...</div>
     </div>
   </div>
@@ -408,13 +435,14 @@
       <span><span class="status-dot"></span>ONLINE</span>
       <span id="turn-counter">TURN: 0</span>
       <span id="mode-display">MODE: AI</span>
+      <span id="ab-display">NARRATIVE: A</span>
       <button class="btn-sm" style="border:none;padding:0;font-size:10px;color:var(--green-dim)" onclick="goToSplash()">← 返回</button>
     </div>
   </header>
 
   <main id="story-panel">
     <div id="thinking">
-      <span>生成中</span>
+      <span id="thinking-text">信号校准中</span>
       <span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span>
     </div>
   </main>
@@ -429,6 +457,32 @@
   </footer>
 
   <aside id="sidebar">
+    <div class="sb-sec">
+      <div class="sb-title">// 悬念轨道 //</div>
+      <div id="track-truth" class="track-row">
+        <span>真相</span>
+        <div class="track-bar"><div class="track-fill" style="width:25%"></div></div>
+        <span id="track-truth-val">1</span>
+      </div>
+      <div id="track-bond" class="track-row">
+        <span>关系</span>
+        <div class="track-bar"><div class="track-fill" style="width:25%"></div></div>
+        <span id="track-bond-val">1</span>
+      </div>
+      <div id="track-survival" class="track-row">
+        <span>生存</span>
+        <div class="track-bar"><div class="track-fill" style="width:25%"></div></div>
+        <span id="track-survival-val">1</span>
+      </div>
+    </div>
+    <div class="sb-sec">
+      <div class="sb-title">// 导演注释 //</div>
+      <div id="director-note">等待第一回合...</div>
+    </div>
+    <div class="sb-sec">
+      <div class="sb-title">// 记忆摘要 //</div>
+      <div id="memory-list"><span class="inv-empty">尚未生成</span></div>
+    </div>
     <div class="sb-sec">
       <div class="sb-title">// STATUS //</div>
       <div class="stat-row">
@@ -462,6 +516,7 @@
     <div class="action-row">
       <button class="btn-sm" onclick="saveGame()">SAVE</button>
       <button class="btn-sm" onclick="loadGame()">LOAD</button>
+      <button class="btn-sm" onclick="restartWithVariant()">REBOOT</button>
       <button class="btn-sm" onclick="goToSplash()">MENU</button>
     </div>
   </aside>
@@ -585,6 +640,30 @@ let aiCfg = {
   baseUrl: '',
   customModel: '',
   maxTokens: '',
+  narrativeMode: 'aggressive',
+};
+
+const NARRATIVE_PROFILES = {
+  aggressive: {
+    code: 'A',
+    label: '激进叙事',
+    style: '高冲突、高节奏、高反转，允许更高风险后果与更强情绪波动。',
+    hardRules: [
+      '每回合至少出现一次压力升级（追击/倒计时/资源损耗/关系破裂四选一）。',
+      '优先给出不可逆抉择，减少模糊过渡句。',
+      '回合结尾必须形成“现在就决定”的紧迫感。',
+    ],
+  },
+  stable: {
+    code: 'B',
+    label: '稳定叙事',
+    style: '高连贯、低跳跃，强调因果链清晰和人物动机一致。',
+    hardRules: [
+      '每回合先回收上一回合后果，再推进新事件。',
+      '避免突兀设定新增；新增信息必须有来源或线索承接。',
+      '选择差异体现在策略路径，不靠随机惊吓。',
+    ],
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════
@@ -639,9 +718,24 @@ document.getElementById('splash-api-key').addEventListener('input',function(){
 document.getElementById('max-tokens-input').addEventListener('input',function(){
   aiCfg.maxTokens=this.value.trim();
 });
+document.getElementById('narrative-mode-select').addEventListener('change', function(){
+  aiCfg.narrativeMode = this.value;
+  updateABDisplay();
+});
 document.getElementById('base-url-input').addEventListener('input',function(){ aiCfg.baseUrl=this.value.trim(); checkCanStart(); });
 document.getElementById('custom-model-input').addEventListener('input',function(){ aiCfg.customModel=this.value.trim(); checkCanStart(); });
 document.getElementById('custom-theme-input').addEventListener('input', checkCanStart);
+
+function getNarrativeProfile(){
+  const mode = state?.narrativeMode || aiCfg.narrativeMode;
+  return NARRATIVE_PROFILES[mode] || NARRATIVE_PROFILES.aggressive;
+}
+
+function updateABDisplay(){
+  const p = getNarrativeProfile();
+  const el = document.getElementById('ab-display');
+  if(el) el.textContent = `NARRATIVE: ${p.code} / ${p.label}`;
+}
 
 function checkCanStart(){
   const btn=document.getElementById('btn-start');
@@ -653,28 +747,101 @@ function checkCanStart(){
   btn.disabled=false;
 }
 
-document.getElementById('btn-start').addEventListener('click', startGame);
+document.getElementById('btn-start').addEventListener('click', ()=>startGame());
 
 function goToSplash(){
   document.getElementById('app').style.display='none';
   document.getElementById('splash').style.display='flex';
 }
 
+function restartWithVariant(){
+  const flaw = REBOOT_FLAWS[Math.floor(Math.random() * REBOOT_FLAWS.length)];
+  selectedTheme = state.theme || selectedTheme;
+  if(!selectedTheme) return;
+  startGame(flaw);
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  GAME STATE
 // ═══════════════════════════════════════════════════════════════
 let state = {};
+const MAX_TURNS = 12;
+const TRACK_KEYS = ['truth','bond','survival'];
+const TRACK_LABELS = { truth:'真相', bond:'关系', survival:'生存' };
+const REBOOT_FLAWS = [
+  { id:'wounded',  title:'旧伤复发', effect:{ hp:-20, survival:-1 } },
+  { id:'guilty',   title:'负罪偏执', effect:{ sanity:-18, bond:-1 } },
+  { id:'in_debt',  title:'背负债务', effect:{ credits:-220, survival:-1 } },
+  { id:'paranoia', title:'过度警戒', effect:{ sanity:-10, truth:1, bond:-1 } },
+];
+const OPENING_SEEDS = {
+  cyberpunk: [
+    '主城区将在 30 分钟后永久断电，你手里只有一张过期通行证。',
+    'MIRA 向全城广播你的代号，悬赏已生效。',
+    '你刚恢复记忆的 12 秒里，看见自己亲手锁死了 99 层电梯。',
+  ],
+  apocalypse: [
+    '你收到女儿的旧语音，背景里出现了今天才会鸣响的警报声。',
+    '聚居地议会宣布天亮前强制驱逐免疫者。',
+    '医院冷库门被从里面敲响，而钥匙就在你口袋里。',
+  ],
+  space: [
+    '飞船在 19 分钟后进入辐射风暴，导航仍指向未知信号源。',
+    'ARIA 解封了一段船员遗言，结尾是你的名字和“不要唤醒我”。',
+    '货舱里出现多余的生命体读数，但摄像头一片空白。',
+  ],
+  wuxia: [
+    '武林大会前夜，三派同时下通缉令，画像正是你。',
+    '密信只有一句：子时前不入皇城，必死。',
+    '裂山剑在你手中发烫，剑鞘内侧刻着你从未见过的家纹。',
+  ],
+  cthulhu: [
+    '灯塔今夜第三次亮起，而潮汐表显示此刻本不该有海。',
+    '失踪者名册里出现了你的署名，日期是三天后。',
+    '镇长递给你一把盐锈钥匙，说“开门前先堵住耳朵”。',
+  ],
+  custom: [
+    '你意识到倒计时已经开始，而所有人都在催你立刻做决定。',
+    '你拿到一条与主线冲突的线索，若追下去将失去一个同盟。',
+    '你发现某个关键真相其实与你本人有关，且代价即将到来。',
+  ],
+};
 
-function resetState(theme){
+function isRebootFlaw(x){
+  return !!(x && typeof x === 'object' && x.effect && typeof x.effect === 'object');
+}
+
+function resetState(theme, rebootFlaw=null){
   state = {
     theme,
     customPrompt: document.getElementById('custom-theme-input').value.trim(),
     turn: 0,
     hp: 100, sanity: 100, credits: 500,
+    tracks: { truth:1, bond:1, survival:1 },
     inventory: [],
     log: [],
+    flags: [],
+    sceneId: 'opening',
+    directorNote: '',
+    memorySummaries: [],
+    turnJournal: [],
+    ambientLines: [],
+    openingSeed: '',
+    variantTag: Math.random().toString(36).slice(2, 8),
+    narrativeMode: aiCfg.narrativeMode,
+    rebootFlaw,
+    gameOver: false,
     aiHistory: [],  // full conversation history for AI
   };
+
+  if(isRebootFlaw(rebootFlaw)){
+    state.hp += rebootFlaw.effect.hp || 0;
+    state.sanity += rebootFlaw.effect.sanity || 0;
+    state.credits += rebootFlaw.effect.credits || 0;
+    TRACK_KEYS.forEach(k=>{ state.tracks[k] = clampTrack((state.tracks[k]||1) + (rebootFlaw.effect[k]||0)); });
+  } else {
+    state.rebootFlaw = null;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -684,6 +851,29 @@ function clearStoryPanel(){
   const panel=document.getElementById('story-panel');
   const th=document.getElementById('thinking');
   [...panel.children].forEach(el=>{ if(el!==th) el.remove(); });
+}
+
+function clampTrack(n){
+  return Math.max(0, Math.min(4, Number.isFinite(n) ? n : 0));
+}
+
+function clampStat(n){
+  return Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
+}
+
+function pickOpeningSeed(theme){
+  const pool = OPENING_SEEDS[theme] || OPENING_SEEDS.custom;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function getTurnDirective(turn){
+  if(turn <= 1) return '开场钩子阶段：立即抛出冲突、倒计时或追捕压力。';
+  if(turn <= 3) return '立足阶段：建立目标、阻力与代价，禁止空转。';
+  if(turn === 4) return '第一反转：必须让已知事实翻转，且指向更大风险。';
+  if(turn <= 7) return '压迫阶段：连续后果，资源或关系必须出现损耗。';
+  if(turn === 8) return '第二反转：揭示隐藏动机/身份，改变决策优先级。';
+  if(turn <= 11) return '收束阶段：三条悬念线并行收束，准备终局抉择。';
+  return '终局阶段：给出不可逆选择，导向结局。';
 }
 
 function typeText(el, text, speed=20){
@@ -723,14 +913,37 @@ function setChoices(choices){
   list.innerHTML='';
   (choices||[]).forEach(c=>{
     const btn=document.createElement('button'); btn.className='choice-btn';
-    btn.textContent=c.text||c;
-    btn.addEventListener('click',()=>handleTurn(c.text||c));
+    const normalized = typeof c === 'string' ? { text:c } : c;
+    btn.textContent=normalized.text||'继续推进';
+    if(normalized.risk || normalized.impact){
+      const meta=document.createElement('div');
+      meta.className='choice-meta';
+      const risk=(normalized.risk||'').toLowerCase();
+      const riskCls = risk.includes('高') || risk==='high' ? 'risk-high'
+        : risk.includes('中') || risk==='mid' || risk==='medium' ? 'risk-mid'
+        : 'risk-low';
+      const impactText = TRACK_KEYS
+        .map(k=>Number(normalized.impact?.[k]||0))
+        .filter(v=>v!==0).length
+        ? TRACK_KEYS.map(k=>{
+            const d=Number(normalized.impact?.[k]||0);
+            if(!d) return null;
+            const sign=d>0?'+':'';
+            return `${TRACK_LABELS[k]}${sign}${d}`;
+          }).filter(Boolean).join(' / ')
+        : '无显性轨道变化';
+      const riskText = normalized.risk ? `风险:${normalized.risk}` : '风险:未知';
+      const preview = normalized.preview ? ` · 结果:${normalized.preview}` : '';
+      meta.innerHTML=`<span class="${riskCls}">${riskText}</span> · ${impactText}${preview}`;
+      btn.appendChild(meta);
+    }
+    btn.addEventListener('click',()=>handleTurn(normalized.text||String(c), normalized));
     list.appendChild(btn);
   });
 }
 
 function updateStats(){
-  const hp=Math.max(0,state.hp), san=Math.max(0,state.sanity);
+  const hp=clampStat(state.hp), san=clampStat(state.sanity);
   document.getElementById('stat-hp').style.width=hp+'%';
   document.getElementById('stat-hp-val').textContent=hp;
   document.getElementById('stat-sanity').style.width=san+'%';
@@ -738,10 +951,99 @@ function updateStats(){
   document.getElementById('stat-credits').style.width=Math.min(100,(state.credits/2000)*100)+'%';
   document.getElementById('stat-credits-val').textContent=state.credits;
   document.getElementById('turn-counter').textContent='TURN: '+state.turn;
+  document.getElementById('choices-label').textContent = `// SELECT ACTION // REMAIN ${Math.max(0, MAX_TURNS - state.turn)}`;
   const hf=document.getElementById('stat-hp');
   if(hp<=30){hf.style.background='var(--red)';hf.style.boxShadow='0 0 5px var(--red)';}
   else if(hp<=60){hf.style.background='var(--amber)';hf.style.boxShadow='0 0 5px var(--amber)';}
   else{hf.style.background='var(--green)';hf.style.boxShadow='0 0 5px var(--green)';}
+}
+
+function updateTracksUI(){
+  TRACK_KEYS.forEach(k=>{
+    const val = clampTrack(state.tracks[k] || 0);
+    const root = document.getElementById('track-'+k);
+    if(!root) return;
+    const fill = root.querySelector('.track-fill');
+    const label = document.getElementById('track-'+k+'-val');
+    if(fill) fill.style.width = ((val/4)*100)+'%';
+    if(label) label.textContent = String(val);
+  });
+}
+
+function updateDirectorNote(note){
+  state.directorNote = note || state.directorNote || '';
+  document.getElementById('director-note').textContent = state.directorNote || '无';
+}
+
+function renderMemoryList(){
+  const list = document.getElementById('memory-list');
+  list.innerHTML = '';
+  if(!state.memorySummaries.length){
+    list.innerHTML = '<span class="inv-empty">尚未生成</span>';
+    return;
+  }
+  state.memorySummaries.slice(-4).forEach(m=>{
+    const el=document.createElement('div');
+    el.className='memory-item';
+    el.textContent = `T${m.range}: ${m.text}`;
+    list.appendChild(el);
+  });
+}
+
+function inferActionCue(actionText=''){
+  const t = String(actionText || '').toLowerCase();
+  if(!t) return '';
+  if(/观察|调查|查看|search|inspect|look|scan/.test(t)) return '线索正在浮现';
+  if(/攻击|突袭|冲|战斗|attack|rush|fight/.test(t)) return '危险正在逼近';
+  if(/谈判|沟通|对话|说服|talk|negotiate|persuade/.test(t)) return '关系正在变化';
+  if(/潜入|躲|逃|撤|stealth|hide|escape/.test(t)) return '阴影正在合拢';
+  if(/使用|装备|物品|药|use|item|equip/.test(t)) return '变量正在重排';
+  return '';
+}
+
+function getThinkingLine({ phase='turn', actionText='', selectedChoice=null } = {}){
+  const cue = inferActionCue(actionText);
+  const profile = getNarrativeProfile();
+  const themeLabel = THEMES_META[state.theme]?.label || '未知领域';
+  const sceneName = state.sceneId || '暗处';
+  const risk = String(selectedChoice?.risk || '').toLowerCase();
+  const riskHint = risk.includes('高') || risk === 'high'
+    ? '空气里有一丝失控的味道'
+    : (risk.includes('低') || risk === 'low' ? '你在压住局势的边缘' : '');
+
+  if(phase === 'opening'){
+    return `${themeLabel} 的夜色正在苏醒`;
+  }
+  if(phase === 'twist'){
+    return profile.code === 'A'
+      ? '某个真相正在突然转向'
+      : '旧线索正在悄悄合拢';
+  }
+  if(phase === 'endgame'){
+    return '最后的抉择正在逼近你';
+  }
+
+  const banned = /(系统|回合|结算|生成|模型|token|json|api|请求)/i;
+  const aiAmbient = (state.ambientLines || []).filter(line=>line && !banned.test(line));
+  if(aiAmbient.length){
+    return aiAmbient[Math.floor(Math.random() * aiAmbient.length)];
+  }
+
+  const pool = [
+    cue,
+    riskHint,
+    `${sceneName} 的动静正在变得不对劲`,
+    '脚步声正在向你靠近',
+    '你听见某个答案正在成形',
+    '局势正在向不可逆的方向滑动',
+    '你还来得及改写这一刻',
+  ].filter(Boolean);
+  return pool[Math.floor(Math.random() * pool.length)] || '剧情正在推进';
+}
+
+function setThinkingText(text){
+  const el = document.getElementById('thinking-text');
+  if(el) el.textContent = text || '剧情正在推进';
 }
 
 function addLog(entry){
@@ -823,6 +1125,21 @@ function buildSystemPrompt(){
   const worldPrompt = state.theme==='custom'
     ? `玩家自定义世界观：\n${state.customPrompt}`
     : THEME_PROMPTS[state.theme];
+  const memoryText = state.memorySummaries.length
+    ? state.memorySummaries.slice(-4).map(m=>`[T${m.range}] ${m.text}`).join('\n')
+    : '暂无摘要';
+  const flags = state.flags.length ? state.flags.join(', ') : '无';
+  const flawLine = state.rebootFlaw ? `重开缺陷：${state.rebootFlaw.title}` : '重开缺陷：无';
+  const turnHint = state.turn===4 || state.turn===8
+    ? '【强制要求】本回合必须触发重大反转事件，且反转应与既有伏笔有关。'
+    : '';
+  const endgameHint = state.turn>=MAX_TURNS
+    ? '【终局】必须收束三条悬念线并准备结局。'
+    : '';
+  const turnDirective = getTurnDirective(state.turn);
+  const openingSeed = state.openingSeed || '无';
+  const profile = getNarrativeProfile();
+  const profileRules = profile.hardRules.map((r, i)=>`${i+1}. ${r}`).join('\n');
 
   return `你是一个沉浸式互动文字冒险游戏的专职叙事引擎，目标是让读者以“你”的视角深度代入。
 
@@ -835,21 +1152,65 @@ ${worldPrompt}
 4. 输出的可选行动必须和本回合剧情强相关，且彼此有真实差异
 5. 不要输出任何 OOC 说明、提示词解释、括号元信息
 6. 玩家可以手动输入任意行动；当玩家手动输入时，必须当作有效指令继续推进
+7. choices 的每个选项都要有显性代价或收益，至少影响一条悬念轨道（truth/bond/survival）
+8. 本回合第一段必须在前两句内出现“变化事件”（警报/背叛/发现/倒计时/冲突升级至少一项）
+9. 本回合至少回收一个旧线索（来自旗标或记忆摘要）并推进一个新风险
+10. narrative 末段必须留下一个具体行动窗口（地点、对象或时限）
+
+═══ 当前游戏状态（必须遵守）═══
+- 当前回合：${state.turn}/${MAX_TURNS}
+- 本回合戏剧任务：${turnDirective}
+- A/B 叙事实验组：${profile.code} / ${profile.label}
+- 风格说明：${profile.style}
+- 实验组硬规则：
+${profileRules}
+- 当前场景ID：${state.sceneId}
+- 悬念轨道：truth=${state.tracks.truth}, bond=${state.tracks.bond}, survival=${state.tracks.survival}
+- 生命/精神/资源：hp=${clampStat(state.hp)}, sanity=${clampStat(state.sanity)}, credits=${state.credits}
+- 当前物品：${state.inventory.join('、') || '无'}
+- 当前旗标：${flags}
+- 本局变体编号：${state.variantTag}
+- 开局钩子种子：${openingSeed}
+- 近四段记忆摘要：
+${memoryText}
+- ${flawLine}
+${turnHint}
+${endgameHint}
 
 ═══ 输出格式（必须严格 JSON） ═══
 只输出 JSON 对象，不要 Markdown，不要代码块，不要额外文字：
 {
   "narrative": "剧情正文（2~4段）",
-  "choices": ["行动1", "行动2", "行动3"],
+  "choices": [
+    {
+      "text": "行动描述",
+      "risk": "低/中/高",
+      "impact": { "truth": 1, "bond": -1, "survival": 0 },
+      "preview": "执行后的即时后果（<=16字）"
+    }
+  ],
   "inventory": {
     "gained": ["可选，获得物品列表"],
     "lost": ["可选，失去物品列表"]
-  }
+  },
+  "state_patch": {
+    "scene_id": "可选",
+    "flags_add": ["可选"],
+    "flags_remove": ["可选"],
+    "hp_delta": 0,
+    "sanity_delta": 0,
+    "credits_delta": 0
+  },
+  "director_note": "一句话说明本回合推进了哪条线，埋了什么伏笔",
+  "ambient_lines": ["用于下一回合等待态的世界内短句1", "短句2", "短句3"]
 }
 
 约束：
 - choices 至少 3 个，最多 5 个
 - 每个 choice 必须是可执行动作，不要抽象空话
+- impact 只能在 -2 到 +2
+- 至少 1 个 choice 的 risk=高，至少 1 个 choice 的 risk=低
+- ambient_lines 提供 3~5 条，每条 6~18 字，必须是世界内旁白，不得出现“系统/回合/结算/生成/模型”等词
 - narrative 内不要再写 > 选项行`;
 }
 
@@ -896,10 +1257,33 @@ function normalizeChoices(arr){
   const list = Array.isArray(arr) ? arr : [];
   const uniq = [];
   list.forEach(item=>{
-    const text = String(item || '').trim();
-    if(text && !uniq.includes(text)) uniq.push(text);
+    if(typeof item === 'string'){
+      const text = item.trim();
+      if(text && !uniq.find(c=>c.text===text)){
+        uniq.push({
+          text,
+          risk: '中',
+          impact: { truth:0, bond:0, survival:0 },
+          preview: '',
+        });
+      }
+      return;
+    }
+    const text = String(item?.text || '').trim();
+    if(!text || uniq.find(c=>c.text===text)) return;
+    const impact = {};
+    TRACK_KEYS.forEach(k=>{
+      const n = Number(item?.impact?.[k] || 0);
+      impact[k] = Math.max(-2, Math.min(2, Number.isFinite(n) ? n : 0));
+    });
+    uniq.push({
+      text,
+      risk: item?.risk ? String(item.risk).trim() : '中',
+      impact,
+      preview: item?.preview ? String(item.preview).trim().slice(0, 24) : '',
+    });
   });
-  return uniq.slice(0, 5).map(text=>({ text }));
+  return uniq.slice(0, 5);
 }
 
 function extractJSONObject(raw){
@@ -928,9 +1312,17 @@ function parseLegacyResponse(raw){
 
   return {
     text: storyLines.join('\n').trim(),
-    choices: normalizeChoices(choiceLines.map(l=>l.replace(/^>\s*/,'').trim())),
+    choices: normalizeChoices(choiceLines.map(l=>({
+      text:l.replace(/^>\s*/,'').trim(),
+      risk:'中',
+      impact:{ truth:0, bond:0, survival:0 },
+      preview:'',
+    }))),
     gained,
     lost,
+    statePatch: {},
+    directorNote: '',
+    ambientLines: [],
   };
 }
 
@@ -944,8 +1336,13 @@ function parseAIResponse(raw){
       const inventory = obj.inventory && typeof obj.inventory === 'object' ? obj.inventory : {};
       const gained = Array.isArray(inventory.gained) ? inventory.gained.map(v=>String(v).trim()).filter(Boolean) : [];
       const lost = Array.isArray(inventory.lost) ? inventory.lost.map(v=>String(v).trim()).filter(Boolean) : [];
+      const statePatch = obj.state_patch && typeof obj.state_patch === 'object' ? obj.state_patch : {};
+      const directorNote = String(obj.director_note || '').trim();
+      const ambientLines = Array.isArray(obj.ambient_lines)
+        ? obj.ambient_lines.map(v=>String(v).trim()).filter(Boolean).slice(0,5)
+        : [];
       if(narrative){
-        return { text: narrative, choices, gained, lost };
+        return { text: narrative, choices, gained, lost, statePatch, directorNote, ambientLines };
       }
     } catch (_e) {
       // fallback to legacy parsing
@@ -955,10 +1352,148 @@ function parseAIResponse(raw){
   return parseLegacyResponse(raw);
 }
 
+function applyStatePatch(statePatch){
+  if(!statePatch || typeof statePatch!=='object') return;
+  const safeNum = v => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  if(statePatch.scene_id) state.sceneId = String(statePatch.scene_id).trim() || state.sceneId;
+  const add = Array.isArray(statePatch.flags_add) ? statePatch.flags_add : [];
+  add.map(v=>String(v).trim()).filter(Boolean).forEach(flag=>{
+    if(!state.flags.includes(flag)) state.flags.push(flag);
+  });
+  const remove = Array.isArray(statePatch.flags_remove) ? statePatch.flags_remove : [];
+  remove.map(v=>String(v).trim()).filter(Boolean).forEach(flag=>{
+    state.flags = state.flags.filter(f=>f!==flag);
+  });
+
+  state.hp = clampStat(state.hp + safeNum(statePatch.hp_delta));
+  state.sanity = clampStat(state.sanity + safeNum(statePatch.sanity_delta));
+  state.credits = Math.max(0, state.credits + safeNum(statePatch.credits_delta));
+}
+
+function applyChoiceImpact(choice){
+  if(!choice || !choice.impact) return;
+  TRACK_KEYS.forEach(k=>{
+    const delta = Number(choice.impact[k] || 0);
+    state.tracks[k] = clampTrack((state.tracks[k] || 0) + delta);
+  });
+}
+
+function maybeCreateMemorySummary(lastNarrative){
+  if(state.turn % 3 !== 0) return;
+  const seg = state.turnJournal.slice(-3);
+  if(!seg.length) return;
+  const acts = seg.map(s=>`${s.turn}:${s.action}`).join(' | ');
+  const cues = seg.map(s=>s.note).filter(Boolean).join('；');
+  const plot = String(lastNarrative || '').replace(/\s+/g,' ').slice(0, 90);
+  const range = `${Math.max(1,state.turn-2)}-${state.turn}`;
+  state.memorySummaries.push({
+    range,
+    text: `${acts} // ${cues || plot || '推进中'}`.slice(0, 160),
+  });
+}
+
+function buildFallbackChoices(){
+  const lowTrack = [...TRACK_KEYS].sort((a,b)=>(state.tracks[a]||0)-(state.tracks[b]||0))[0];
+  const lowLabel = TRACK_LABELS[lowTrack];
+  const scene = state.sceneId || '现场';
+  const highRiskText = state.turn >= 8
+    ? `立刻闯入${scene}核心区域，强行夺取关键证据`
+    : `冒险追查${scene}中的异常源头`;
+  const lowRiskText = `先稳住局势，修补${lowLabel}线再推进`;
+  return [
+    {
+      text: highRiskText,
+      risk:'高',
+      impact:{ truth:1, bond:-1, survival:-1 },
+      preview:'快速推进但代价上升',
+    },
+    {
+      text:'联系关键人物交换情报，争取短期同盟',
+      risk:'中',
+      impact:{ truth:0, bond:1, survival:0 },
+      preview:'关系改善，信息未必完整',
+    },
+    {
+      text: lowRiskText,
+      risk:'低',
+      impact:{ truth:-1, bond:0, survival:1 },
+      preview:'风险下降但真相延后',
+    },
+  ];
+}
+
+function enforceChoiceImpacts(choices){
+  const list = Array.isArray(choices) ? choices.map(c=>({ ...c, impact:{ ...(c.impact||{}) } })) : [];
+  const templates = buildFallbackChoices();
+  const normalized = list.map((c, idx)=>{
+    TRACK_KEYS.forEach(k=>{ c.impact[k] = Number(c.impact[k] || 0); });
+    const nonZero = TRACK_KEYS.some(k=>c.impact[k] !== 0);
+    if(nonZero) return c;
+    const t = templates[idx % templates.length];
+    c.impact = { ...t.impact };
+    if(!c.risk) c.risk = t.risk;
+    if(!c.preview) c.preview = t.preview;
+    return c;
+  });
+  if(!normalized.length) return templates;
+  const hasHigh = normalized.some(c=>String(c.risk||'').includes('高') || String(c.risk||'').toLowerCase()==='high');
+  const hasLow = normalized.some(c=>String(c.risk||'').includes('低') || String(c.risk||'').toLowerCase()==='low');
+  if(!hasHigh) normalized[0].risk = '高';
+  if(!hasLow) normalized[normalized.length - 1].risk = '低';
+  return normalized;
+}
+
 // ═══════════════════════════════════════════════════════════════
 //  HANDLE TURN (core game loop)
 // ═══════════════════════════════════════════════════════════════
-async function handleTurn(playerAction){
+function computeEnding(){
+  const { truth, bond, survival } = state.tracks;
+  const score = truth + bond + survival;
+  const profile = getNarrativeProfile();
+  let rank='残响结局';
+  if(score>=10) rank='真相同盟结局';
+  else if(score>=7) rank='险胜结局';
+  else if(score>=4) rank='代价结局';
+  else rank='崩坏结局';
+
+  const line = `真相${truth}/关系${bond}/生存${survival}，你走到第${state.turn}回合。`;
+  const keyChoice = state.turnJournal.slice(-3).map(t=>`T${t.turn}:${t.action}`).join('；');
+  return {
+    title: rank,
+    summary: `${line}${state.rebootFlaw ? ` 缺陷: ${state.rebootFlaw.title}。` : ''} 组别:${profile.code}/${profile.label}。`,
+    keyChoice,
+  };
+}
+
+async function endGame(){
+  state.gameOver = true;
+  setInputEnabled(false);
+  setChoices([]);
+  const ending = computeEnding();
+  const share = `【${ending.title}】\n${ending.summary}\n关键抉择：${ending.keyChoice || '无'}\n#TheLastTerminal`;
+  await addBlock(
+    `[终局结算]\n${ending.title}\n${ending.summary}\n关键抉择：${ending.keyChoice || '无'}\n\n可复制分享：\n${share}`,
+    'sys',
+    true
+  );
+  setChoices([
+    { text:'同世界重开（带缺陷）', risk:'中', impact:{ truth:0, bond:0, survival:0 } },
+    { text:'返回主菜单', risk:'低', impact:{ truth:0, bond:0, survival:0 } },
+  ]);
+  const btns=[...document.querySelectorAll('.choice-btn')];
+  if(btns[0]) btns[0].addEventListener('click', restartWithVariant);
+  if(btns[1]) btns[1].addEventListener('click', goToSplash);
+}
+
+async function handleTurn(playerAction, selectedChoice=null){
+  if(state.gameOver) return;
+  if(state.turn >= MAX_TURNS){
+    await endGame();
+    return;
+  }
   setInputEnabled(false);
   setChoices([]);
   state.turn++;
@@ -968,8 +1503,14 @@ async function handleTurn(playerAction){
 
   // Add to AI history
   state.aiHistory.push({ role:'user', content: playerAction });
+  applyChoiceImpact(selectedChoice);
+  updateTracksUI();
 
   // Fetch AI
+  const phase = state.turn === 4 || state.turn === 8
+    ? 'twist'
+    : (state.turn >= MAX_TURNS - 1 ? 'endgame' : 'turn');
+  setThinkingText(getThinkingLine({ phase, actionText: playerAction, selectedChoice }));
   $thinking().style.display='flex';
   let raw=null;
   try {
@@ -991,44 +1532,65 @@ async function handleTurn(playerAction){
   state.aiHistory.push({ role:'assistant', content: raw });
 
   // Parse
-  const { text, choices, gained, lost } = parseAIResponse(raw);
+  const { text, choices, gained, lost, statePatch, directorNote, ambientLines } = parseAIResponse(raw);
 
   // Apply inventory changes
   gained.forEach(item=>{ if(!state.inventory.includes(item)){ state.inventory.push(item); addLog('获得: '+item); } });
   lost.forEach(item=>{ state.inventory=state.inventory.filter(i=>i!==item); addLog('失去: '+item); });
+  applyStatePatch(statePatch);
+  state.ambientLines = Array.isArray(ambientLines) ? ambientLines : [];
+  updateDirectorNote(directorNote || '本回合缺少导演注释。');
+  state.turnJournal.push({
+    turn: state.turn,
+    action: playerAction,
+    note: state.directorNote,
+  });
+  maybeCreateMemorySummary(text);
   updateInventory();
   updateStats();
+  updateTracksUI();
+  renderMemoryList();
 
   // Display story
   await addBlock(text);
 
   // Set choices + re-enable input
-  setChoices(choices.length>0 ? choices : [
-    { text:'观察周围环境，寻找新的线索' },
-    { text:'与眼前目标互动，试探其反应' },
-    { text:'整理当前局势并制定下一步计划' },
-  ]);
+  setChoices(enforceChoiceImpacts(choices.length>0 ? choices : buildFallbackChoices()));
   setInputEnabled(true);
   document.getElementById('action-input').value='';
   document.getElementById('story-panel').scrollTop=99999;
+
+  if(state.turn >= MAX_TURNS){
+    await endGame();
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
 //  START GAME
 // ═══════════════════════════════════════════════════════════════
-async function startGame(){
-  const theme = selectedTheme;
-  resetState(theme);
+async function startGame(rebootFlaw=null){
+  if(rebootFlaw && typeof rebootFlaw === 'object' && 'type' in rebootFlaw && 'target' in rebootFlaw){
+    rebootFlaw = null;
+  }
+  const theme = selectedTheme || state.theme;
+  if(!theme) return;
+  resetState(theme, rebootFlaw);
+  state.narrativeMode = aiCfg.narrativeMode;
+  state.openingSeed = pickOpeningSeed(theme);
 
   document.getElementById('splash').style.display='none';
   document.getElementById('app').style.display='grid';
   document.getElementById('h-theme').textContent = THEMES_META[theme].label;
   document.getElementById('mode-display').textContent = 'MODE: AI';
+  updateABDisplay();
   document.getElementById('log-list').innerHTML='';
   document.getElementById('choices-list').innerHTML='';
 
   clearStoryPanel();
   updateStats(); updateInventory();
+  updateTracksUI();
+  updateDirectorNote('等待第一回合...');
+  renderMemoryList();
 
   if(!aiCfg.enabled){
     setAIIndicator('offline');
@@ -1041,15 +1603,25 @@ async function startGame(){
   setAIIndicator('online');
 
   // Boot message
-  await addBlock('[系统启动 // '+THEMES_META[theme].label.toUpperCase()+']', 'sys', true);
+  await addBlock('[系统启动 // '+THEMES_META[theme].label.toUpperCase()+` // ${MAX_TURNS}回合封顶]`, 'sys', true);
+  await addBlock(`[钩子载入] ${state.openingSeed}`, 'sys', true);
+  if(isRebootFlaw(rebootFlaw)){
+    await addBlock(`[REBOOT 缺陷加载] ${rebootFlaw.title}`, 'sys', true);
+    addLog(`缺陷: ${rebootFlaw.title}`);
+  }
 
   // Push the opening instruction to history
+  const p = getNarrativeProfile();
   state.aiHistory.push({
     role: 'user',
-    content: '开始游戏。请生成开场剧情，并严格按约定 JSON 返回 narrative + choices + inventory。'
+    content: `开始游戏。开场必须使用此钩子：${state.openingSeed}。` +
+      `${isRebootFlaw(rebootFlaw) ? `主角缺陷：${rebootFlaw.title}。` : ''}` +
+      `叙事实验组：${p.code}/${p.label}。` +
+      '请生成开场剧情，并严格按约定 JSON 返回 narrative + choices + inventory + state_patch + director_note + ambient_lines。'
   });
 
   $thinking().style.display='flex';
+  setThinkingText(getThinkingLine({ phase:'opening', actionText:'开场' }));
   let raw=null;
   try {
     raw = await fetchAITurn();
@@ -1066,16 +1638,24 @@ async function startGame(){
   }
 
   state.aiHistory.push({ role:'assistant', content: raw });
-  const { text, choices, gained, lost } = parseAIResponse(raw);
+  const { text, choices, gained, lost, statePatch, directorNote, ambientLines } = parseAIResponse(raw);
   gained.forEach(item=>{ if(!state.inventory.includes(item)){ state.inventory.push(item); addLog('获得: '+item); } });
+  lost.forEach(item=>{ state.inventory=state.inventory.filter(i=>i!==item); addLog('失去: '+item); });
+  applyStatePatch(statePatch);
+  state.ambientLines = Array.isArray(ambientLines) ? ambientLines : [];
+  updateDirectorNote(directorNote || '开局未返回导演注释。');
+  state.turnJournal.push({
+    turn: 0,
+    action: '开局',
+    note: state.directorNote,
+  });
   updateInventory();
+  updateStats();
+  updateTracksUI();
+  renderMemoryList();
 
   await addBlock(text);
-  setChoices(choices.length>0 ? choices : [
-    { text:'观察周围环境，寻找新的线索' },
-    { text:'与眼前目标互动，试探其反应' },
-    { text:'整理当前局势并制定下一步计划' },
-  ]);
+  setChoices(enforceChoiceImpacts(choices.length>0 ? choices : buildFallbackChoices()));
   setInputEnabled(true);
 }
 
@@ -1098,6 +1678,12 @@ function saveGame(){
     localStorage.setItem('retro_save', JSON.stringify({
       theme:state.theme, customPrompt:state.customPrompt,
       turn:state.turn, hp:state.hp, sanity:state.sanity, credits:state.credits,
+      tracks:state.tracks, flags:state.flags, sceneId:state.sceneId,
+      directorNote:state.directorNote, memorySummaries:state.memorySummaries,
+      turnJournal:state.turnJournal, ambientLines:state.ambientLines,
+      openingSeed:state.openingSeed, variantTag:state.variantTag,
+      narrativeMode:state.narrativeMode,
+      rebootFlaw:state.rebootFlaw, gameOver:state.gameOver,
       inventory:state.inventory, log:state.log,
       aiHistory: state.aiHistory,
     }));
@@ -1113,23 +1699,39 @@ function loadGame(){
   if(!raw){ addBlock('[没有找到存档]','err',true); return; }
   const s=JSON.parse(raw);
   Object.assign(state,s);
+  state.tracks = state.tracks || { truth:1, bond:1, survival:1 };
+  state.flags = Array.isArray(state.flags) ? state.flags : [];
+  state.memorySummaries = Array.isArray(state.memorySummaries) ? state.memorySummaries : [];
+  state.turnJournal = Array.isArray(state.turnJournal) ? state.turnJournal : [];
+  state.ambientLines = Array.isArray(state.ambientLines) ? state.ambientLines : [];
+  state.openingSeed = state.openingSeed || pickOpeningSeed(state.theme || 'custom');
+  state.variantTag = state.variantTag || Math.random().toString(36).slice(2, 8);
+  state.narrativeMode = state.narrativeMode || aiCfg.narrativeMode || 'aggressive';
+  aiCfg.narrativeMode = state.narrativeMode;
+  const modeSel = document.getElementById('narrative-mode-select');
+  if(modeSel) modeSel.value = aiCfg.narrativeMode;
+  selectedTheme = state.theme || selectedTheme;
+  document.getElementById('h-theme').textContent = THEMES_META[state.theme]?.label || '';
   clearStoryPanel();
   document.getElementById('log-list').innerHTML='';
   updateStats(); updateInventory();
+  updateTracksUI();
+  updateDirectorNote(state.directorNote || '无');
+  renderMemoryList();
+  updateABDisplay();
   s.log.slice(-15).forEach(e=>{ const el=document.createElement('div'); el.className='log-entry'; el.textContent=e; document.getElementById('log-list').appendChild(el); });
-  addBlock('[读取存档 · '+THEMES_META[state.theme]?.label+' · TURN '+state.turn+']','sys',true);
+  addBlock('[读取存档 · '+THEMES_META[state.theme]?.label+' · TURN '+state.turn+'/'+MAX_TURNS+']','sys',true);
 
   // Show last AI message if available
   const lastAI = [...state.aiHistory].reverse().find(m=>m.role==='assistant');
   if(lastAI){
     const {text, choices} = parseAIResponse(lastAI.content);
     addBlock(text,'story',true);
-    setChoices(choices.length>0?choices:[
-      { text:'观察周围环境，寻找新的线索' },
-      { text:'与眼前目标互动，试探其反应' },
-      { text:'整理当前局势并制定下一步计划' },
-    ]);
+    setChoices(enforceChoiceImpacts(choices.length>0?choices:buildFallbackChoices()));
     setInputEnabled(true);
+  }
+  if(state.gameOver || state.turn >= MAX_TURNS){
+    endGame();
   }
 }
 
