@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>THE LAST TERMINAL // RETRO AI ADVENTURE</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+    :root {
+      --green: #00ff41;
+      --green-dim: #00b32c;
+      --green-dark: #003b0d;
+      --amber: #ffb000;
+      --red: #ff3333;
+      --blue: #00cfff;
+      --purple: #bf5fff;
+      --bg: #050a05;
+      --panel-bg: rgba(0,255,65,0.04);
+      --border: rgba(0,255,65,0.25);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--green);
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+      font-size: 15px;
+      line-height: 1.7;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* CRT */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(to bottom, transparent 0px, transparent 2px, rgba(0,0,0,0.15) 2px, rgba(0,0,0,0.15) 4px);
+      pointer-events: none; z-index: 9998;
+    }
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+      pointer-events: none; z-index: 9997;
+      animation: flicker 10s infinite;
+    }
+    @keyframes flicker { 0%,100%{opacity:1} 93%{opacity:.88} 94%{opacity:1} 98%{opacity:.94} 99%{opacity:1} }
+    #noise { position:fixed; inset:0; opacity:.025; pointer-events:none; z-index:9996; }
+
+    /* ═══ SPLASH ═══════════════════════════════════════════════ */
+    #splash {
+      position: fixed; inset: 0; background: var(--bg); z-index: 999;
+      display: flex; flex-direction: column; align-items: center;
+      overflow-y: auto; padding: 30px 20px 50px;
+    }
+    .splash-logo { text-align:center; margin-bottom:28px; }
+    .splash-logo h1 {
+      font-size: clamp(18px,3.5vw,30px); letter-spacing:6px;
+      color: var(--green);
+      text-shadow: 0 0 20px var(--green), 0 0 40px var(--green-dim);
+      animation: glow 3s infinite;
+    }
+    @keyframes glow { 0%,100%{text-shadow:0 0 20px var(--green),0 0 40px var(--green-dim)} 50%{text-shadow:0 0 30px var(--green),0 0 60px #00ff4155} }
+    .splash-logo p { color:var(--green-dim); font-size:11px; letter-spacing:3px; margin-top:6px; }
+
+    .sec-title {
+      color:var(--green-dim); font-size:10px; letter-spacing:3px;
+      border-bottom:1px solid var(--border); padding-bottom:6px;
+      width:100%; max-width:820px; margin-bottom:14px;
+    }
+
+    .theme-grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+      gap:10px; width:100%; max-width:820px; margin-bottom:28px;
+    }
+    .theme-card {
+      border:1px solid var(--border); padding:14px; cursor:pointer;
+      transition:all .2s; background:var(--panel-bg); position:relative;
+    }
+    .theme-card:hover { border-color:var(--green); box-shadow:0 0 14px rgba(0,255,65,.12) inset; }
+    .theme-card.selected { border-color:var(--green); box-shadow:0 0 18px rgba(0,255,65,.18); }
+    .theme-card .t-icon { font-size:22px; margin-bottom:7px; }
+    .theme-card .t-name { font-size:13px; color:var(--green); margin-bottom:3px; }
+    .theme-card .t-sub  { font-size:9px; color:var(--green-dim); margin-bottom:7px; letter-spacing:1px; }
+    .theme-card .t-desc { font-size:11px; color:#999; line-height:1.5; }
+    .theme-badge {
+      position:absolute; top:7px; right:7px;
+      font-size:8px; padding:2px 5px; border:1px solid; letter-spacing:1px;
+    }
+    .badge-ai { color:var(--blue); border-color:var(--blue); }
+    .badge-custom { color:var(--amber); border-color:var(--amber); }
+
+    #custom-theme-box { display:none; width:100%; max-width:820px; margin-bottom:20px; }
+    .retro-textarea {
+      width:100%; background:var(--green-dark); border:1px solid var(--border);
+      color:var(--green); font-family:inherit; font-size:12px;
+      padding:10px 14px; resize:vertical; min-height:60px; outline:none;
+    }
+    .retro-textarea:focus { border-color:var(--green); }
+    .retro-textarea::placeholder { color:var(--green-dim); opacity:.5; }
+
+    .ai-config-box {
+      width:100%; max-width:820px; border:1px solid var(--border);
+      padding:16px; margin-bottom:22px; background:var(--panel-bg);
+    }
+    .ai-mode-row { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+    .toggle-switch {
+      width:36px; height:20px; background:var(--green-dark);
+      border:1px solid var(--border); border-radius:10px;
+      position:relative; cursor:pointer; transition:background .2s; flex-shrink:0;
+    }
+    .toggle-switch.on { background:var(--green-dim); box-shadow:0 0 8px var(--green); }
+    .toggle-knob {
+      position:absolute; top:3px; left:3px; width:12px; height:12px;
+      background:var(--green-dark); border-radius:50%; transition:left .2s, background .2s;
+    }
+    .toggle-switch.on .toggle-knob { left:19px; background:var(--green); }
+
+    .ai-config-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
+    @media(max-width:600px) { .ai-config-row { grid-template-columns:1fr; } }
+    .field-label { font-size:9px; color:var(--green-dim); letter-spacing:2px; margin-bottom:4px; }
+
+    select, .retro-input {
+      width:100%; background:var(--green-dark); border:1px solid var(--border);
+      color:var(--green); font-family:inherit; font-size:12px;
+      padding:6px 10px; outline:none; appearance:none; cursor:pointer;
+    }
+    select:focus, .retro-input:focus { border-color:var(--green); }
+    select option { background:#0a150a; }
+    .retro-input::placeholder { color:var(--green-dim); opacity:.5; }
+    #custom-base-url-row { display:none; margin-bottom:10px; }
+    .ai-status-note { font-size:10px; color:var(--green-dim); margin-top:7px; min-height:14px; }
+    .ai-status-note.ok  { color:var(--green); }
+    .ai-status-note.err { color:var(--red); }
+
+    .btn-start {
+      width:100%; max-width:820px; background:none; border:1px solid var(--green);
+      color:var(--green); font-family:inherit; font-size:16px; padding:13px;
+      cursor:pointer; letter-spacing:4px; transition:all .2s;
+      text-shadow:0 0 10px var(--green);
+    }
+    .btn-start:hover { background:rgba(0,255,65,.07); box-shadow:0 0 20px rgba(0,255,65,.2); letter-spacing:6px; }
+    .btn-start:disabled { opacity:.3; cursor:not-allowed; letter-spacing:4px; }
+
+    /* ═══ GAME ══════════════════════════════════════════════════ */
+    #app {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      grid-template-columns: 1fr 240px;
+      height: 100vh;
+      gap: 1px;
+      background: var(--border);
+      padding: 1px;
+    }
+
+    #header {
+      grid-column: 1 / -1;
+      background: var(--bg); padding: 6px 16px;
+      display:flex; align-items:center; justify-content:space-between;
+      border-bottom:1px solid var(--border);
+    }
+    .h-left { display:flex; align-items:center; gap:14px; }
+    .h-title { font-size:15px; letter-spacing:3px; color:var(--green); text-shadow:0 0 10px var(--green); }
+    .h-theme { font-size:11px; color:var(--amber); letter-spacing:1px; }
+    .h-right  { font-size:10px; color:var(--green-dim); display:flex; gap:14px; align-items:center; }
+    .status-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--green); box-shadow:0 0 5px var(--green); animation:blink 2s step-end infinite; margin-right:4px; }
+    @keyframes blink { 50%{opacity:0} }
+
+    #story-panel {
+      grid-column:1; grid-row:2;
+      background:var(--bg); padding:20px;
+      overflow-y:auto; display:flex; flex-direction:column; gap:14px;
+      scrollbar-width:thin; scrollbar-color:var(--green-dim) transparent;
+    }
+    #story-panel::-webkit-scrollbar { width:3px; }
+    #story-panel::-webkit-scrollbar-thumb { background:var(--green-dim); }
+
+    /* All story blocks look the same - no AI vs local distinction */
+    .story-block {
+      padding:14px 18px;
+      border-left:2px solid var(--green-dim);
+      background:var(--panel-bg);
+      animation:fadeIn .3s ease;
+      white-space:pre-wrap;
+      line-height:1.75;
+    }
+    .story-block.sys {
+      border-left-color:var(--amber); color:var(--amber); font-size:12px;
+    }
+    .story-block.player {
+      border-left-color:var(--green-dim);
+      background:var(--panel-bg);
+      color:var(--green);
+      font-size:13px;
+    }
+    .story-block.err { border-left-color:var(--red); color:var(--red); }
+
+    @keyframes fadeIn { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:none} }
+    .prefix { font-size:9px; color:rgba(0,255,65,.4); letter-spacing:1px; margin-bottom:5px; }
+
+    /* Thinking indicator inside story panel */
+    #thinking {
+      display:none; align-items:center; gap:8px;
+      padding:10px 18px; font-size:12px; color:var(--green-dim);
+      border-left:2px solid var(--green-dark);
+    }
+    .thinking-dots span { animation:tdot 1.2s step-end infinite; }
+    .thinking-dots span:nth-child(2) { animation-delay:.4s; }
+    .thinking-dots span:nth-child(3) { animation-delay:.8s; }
+    @keyframes tdot { 0%,100%{opacity:1} 50%{opacity:.1} }
+
+    /* Choices panel */
+    #choices-panel {
+      grid-column:1; grid-row:3;
+      background:var(--bg); padding:10px 18px 12px;
+      border-top:1px solid var(--border);
+    }
+    .choices-label { font-size:9px; color:var(--green-dim); letter-spacing:2px; margin-bottom:8px; }
+    #choices-list { display:flex; flex-direction:column; gap:5px; margin-bottom:8px; }
+    .choice-btn {
+      background:none; border:1px solid var(--border); color:var(--green);
+      font-family:inherit; font-size:13px; padding:7px 14px;
+      text-align:left; cursor:pointer; transition:all .15s;
+    }
+    .choice-btn::before { content:'> '; color:var(--green-dim); }
+    .choice-btn:hover { background:rgba(0,255,65,.07); border-color:var(--green); color:#fff; }
+    .choice-btn:disabled { opacity:.3; cursor:not-allowed; }
+
+    /* Free text input */
+    #input-row {
+      display:flex; gap:6px; margin-top:4px;
+    }
+    #action-input {
+      flex:1; background:var(--green-dark); border:1px solid var(--border);
+      color:var(--green); font-family:inherit; font-size:13px;
+      padding:7px 12px; outline:none;
+    }
+    #action-input:focus { border-color:var(--green); }
+    #action-input::placeholder { color:var(--green-dim); opacity:.4; }
+    #action-submit {
+      background:none; border:1px solid var(--border); color:var(--green-dim);
+      font-family:inherit; font-size:12px; padding:7px 14px;
+      cursor:pointer; transition:all .15s; white-space:nowrap;
+    }
+    #action-submit:hover { border-color:var(--green); color:var(--green); }
+    #action-submit:disabled { opacity:.3; cursor:not-allowed; }
+
+    /* Sidebar */
+    #sidebar {
+      background:var(--bg); grid-column:2; grid-row:2/4;
+      display:flex; flex-direction:column;
+      border-left:1px solid var(--border); overflow-y:auto;
+    }
+    .sb-sec { padding:12px 13px; border-bottom:1px solid var(--border); }
+    .sb-title { font-size:9px; letter-spacing:3px; color:var(--green-dim); margin-bottom:10px; }
+    .stat-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:11px; }
+    .stat-label { color:var(--green-dim); }
+    .stat-bar { width:76px; height:5px; background:var(--green-dark); border:1px solid var(--border); overflow:hidden; }
+    .stat-fill { height:100%; background:var(--green); box-shadow:0 0 5px var(--green); transition:width .5s; }
+    #inventory-list { display:flex; flex-direction:column; gap:4px; font-size:11px; min-height:28px; }
+    .inv-item { color:var(--amber); }
+    .inv-item::before { content:'['; color:var(--green-dim); }
+    .inv-item::after  { content:']'; color:var(--green-dim); }
+    .inv-empty { color:var(--green-dark); font-size:10px; font-style:italic; }
+    #log-list { font-size:10px; color:var(--green-dim); display:flex; flex-direction:column; gap:3px; }
+    .log-entry::before { content:'· '; }
+    .ai-ind {
+      display:flex; align-items:center; gap:7px;
+      padding:9px 13px; border-bottom:1px solid var(--border); font-size:10px;
+    }
+    .ai-ind .dot { width:6px; height:6px; border-radius:50%; }
+    .ai-ind.offline .dot { background:#333; }
+    .ai-ind.online  .dot { background:var(--green); box-shadow:0 0 5px var(--green); animation:blink 2s step-end infinite; }
+    .ai-ind.error   .dot { background:var(--red); }
+    .action-row { display:flex; gap:5px; padding:9px 13px; }
+    .btn-sm {
+      flex:1; background:none; border:1px solid var(--border); color:var(--green-dim);
+      font-family:inherit; font-size:9px; padding:5px 3px;
+      cursor:pointer; letter-spacing:1px; transition:all .15s;
+    }
+    .btn-sm:hover { border-color:var(--green); color:var(--green); }
+
+    .cursor { display:inline-block; width:8px; height:1em; background:var(--green); animation:blink 1s step-end infinite; vertical-align:text-bottom; margin-left:2px; }
+
+    @media(max-width:720px) {
+      #app { grid-template-columns:1fr; }
+      #sidebar { display:none; }
+    }
+  </style>
+</head>
+<body>
+<canvas id="noise"></canvas>
+
+<!-- ═══ SPLASH ══════════════════════════════════════════════════ -->
+<div id="splash">
+  <div class="splash-logo">
+    <h1>THE LAST TERMINAL</h1>
+    <p>RETRO AI TEXT ADVENTURE // v0.3</p>
+  </div>
+
+  <div class="sec-title">// 选择世界观 — AI 将生成专属于你的剧情 //</div>
+  <div class="theme-grid" id="theme-grid">
+    <div class="theme-card" data-theme="cyberpunk">
+      <span class="theme-badge badge-ai">AI 全驱动</span>
+      <div class="t-icon">🌆</div>
+      <div class="t-name">赛博朋克·废土</div>
+      <div class="t-sub">BLADE RUNNER × GHOST IN THE SHELL</div>
+      <div class="t-desc">2087年，AI叛乱后的霓虹废墟。你从数据中心醒来，终端的绿光是最后的线索。</div>
+    </div>
+    <div class="theme-card" data-theme="apocalypse">
+      <span class="theme-badge badge-ai">AI 全驱动</span>
+      <div class="t-icon">🌿</div>
+      <div class="t-name">末日·幸存者</div>
+      <div class="t-sub">THE LAST OF US × I AM LEGEND</div>
+      <div class="t-desc">真菌病毒肆虐二十年后的荒野。你是少数免疫者之一，而女儿在城墙另一侧。</div>
+    </div>
+    <div class="theme-card" data-theme="space">
+      <span class="theme-badge badge-ai">AI 全驱动</span>
+      <div class="t-icon">🚀</div>
+      <div class="t-name">星际·孤航</div>
+      <div class="t-sub">INTERSTELLAR × THE EXPANSE</div>
+      <div class="t-desc">深空飞船停止响应。你从冬眠舱中醒来，船上只剩你一个人，还有一个信号。</div>
+    </div>
+    <div class="theme-card" data-theme="wuxia">
+      <span class="theme-badge badge-ai">AI 全驱动</span>
+      <div class="t-icon">⚔️</div>
+      <div class="t-name">江湖·侠客</div>
+      <div class="t-sub">金庸 × 古龙 × 天龙八部</div>
+      <div class="t-desc">武林大会前夜，你失忆地倒在古庙，腰间是消失二十年的裂山剑。</div>
+    </div>
+    <div class="theme-card" data-theme="cthulhu">
+      <span class="theme-badge badge-ai">AI 全驱动</span>
+      <div class="t-icon">🐙</div>
+      <div class="t-name">克苏鲁·禁忌</div>
+      <div class="t-sub">LOVECRAFT × ALAN WAKE</div>
+      <div class="t-desc">1923年，阿卡姆镇。连环失踪案将你引向废弃灯塔，门上刻着奇异符文。</div>
+    </div>
+    <div class="theme-card" data-theme="custom">
+      <span class="theme-badge badge-custom">自定义</span>
+      <div class="t-icon">🎲</div>
+      <div class="t-name">我的世界</div>
+      <div class="t-sub">YOUR STORY × AI POWERED</div>
+      <div class="t-desc">描述你的世界观、时代、风格与角色，AI 生成专属于你的冒险。</div>
+    </div>
+  </div>
+
+  <div id="custom-theme-box">
+    <div class="sec-title">// 描述你的世界 //</div>
+    <textarea id="custom-theme-input" class="retro-textarea"
+      placeholder="例：19世纪维多利亚·蒸汽朋克。我是女侦探，正调查一系列发条人偶谋杀案..."></textarea>
+  </div>
+
+  <div class="sec-title">// AI 配置（必须开启才能游玩） //</div>
+  <div class="ai-config-box">
+    <div class="ai-mode-row">
+      <div class="toggle-switch" id="splash-ai-toggle"></div>
+      <span style="font-size:13px">启用 Claude / GPT / Gemini 等 AI</span>
+      <span style="font-size:10px;color:var(--green-dim);margin-left:auto">必须开启 AI 才能游玩</span>
+    </div>
+    <div id="ai-fields" style="display:none">
+      <div class="ai-config-row">
+        <div>
+          <div class="field-label">// API 提供商 //</div>
+          <select id="provider-select">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI (GPT)</option>
+            <option value="gemini">Google (Gemini)</option>
+            <option value="grok">xAI (Grok)</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="custom">自定义 / OpenAI 兼容</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label">// 模型 //</div>
+          <select id="model-select"></select>
+        </div>
+      </div>
+      <div id="custom-base-url-row">
+        <div class="field-label">// Base URL //</div>
+        <input id="base-url-input" class="retro-input" type="text" placeholder="https://your-endpoint/v1" />
+        <div style="margin-top:6px">
+          <div class="field-label">// 模型名称 //</div>
+          <input id="custom-model-input" class="retro-input" type="text" placeholder="gpt-4o / llama-3 / ..." />
+        </div>
+      </div>
+      <div class="field-label" style="margin-top:8px">// API KEY //</div>
+      <input id="splash-api-key" class="retro-input" type="password" placeholder="粘贴你的 API Key..." autocomplete="off" spellcheck="false" />
+      <div class="field-label" style="margin-top:8px">// 最大输出 Tokens（可选） //</div>
+      <input id="max-tokens-input" class="retro-input" type="number" min="256" step="256" placeholder="留空=不主动限制（Anthropic 默认 8192）" />
+      <div class="ai-status-note" id="splash-ai-status">等待输入 Key...</div>
+    </div>
+  </div>
+
+  <button class="btn-start" id="btn-start" disabled>▶ &nbsp; 开始游戏</button>
+</div>
+
+<!-- ═══ GAME ════════════════════════════════════════════════════ -->
+<div id="app" style="display:none">
+  <header id="header">
+    <div class="h-left">
+      <div class="h-title">THE LAST TERMINAL</div>
+      <div class="h-theme" id="h-theme"></div>
+    </div>
+    <div class="h-right">
+      <span><span class="status-dot"></span>ONLINE</span>
+      <span id="turn-counter">TURN: 0</span>
+      <span id="mode-display">MODE: AI</span>
+      <button class="btn-sm" style="border:none;padding:0;font-size:10px;color:var(--green-dim)" onclick="goToSplash()">← 返回</button>
+    </div>
+  </header>
+
+  <main id="story-panel">
+    <div id="thinking">
+      <span>生成中</span>
+      <span class="thinking-dots"><span>.</span><span>.</span><span>.</span></span>
+    </div>
+  </main>
+
+  <footer id="choices-panel">
+    <div class="choices-label" id="choices-label">// SELECT ACTION //</div>
+    <div id="choices-list"></div>
+    <div id="input-row">
+      <input id="action-input" type="text" placeholder="或者，直接输入你的行动..." autocomplete="off" />
+      <button id="action-submit">发送 ▶</button>
+    </div>
+  </footer>
+
+  <aside id="sidebar">
+    <div class="sb-sec">
+      <div class="sb-title">// STATUS //</div>
+      <div class="stat-row">
+        <span class="stat-label">HP</span>
+        <div class="stat-bar"><div class="stat-fill" id="stat-hp" style="width:100%"></div></div>
+        <span id="stat-hp-val" style="font-size:10px">100</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">精神</span>
+        <div class="stat-bar"><div class="stat-fill" id="stat-sanity" style="width:100%;background:var(--blue);box-shadow:0 0 5px var(--blue)"></div></div>
+        <span id="stat-sanity-val" style="font-size:10px">100</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">资源</span>
+        <div class="stat-bar"><div class="stat-fill" id="stat-credits" style="width:50%;background:var(--amber);box-shadow:0 0 5px var(--amber)"></div></div>
+        <span id="stat-credits-val" style="font-size:10px">500</span>
+      </div>
+    </div>
+    <div class="sb-sec">
+      <div class="sb-title">// 物品栏 //</div>
+      <div id="inventory-list"><span class="inv-empty">空</span></div>
+    </div>
+    <div class="sb-sec" style="flex:1">
+      <div class="sb-title">// 事件日志 //</div>
+      <div id="log-list"></div>
+    </div>
+    <div class="ai-ind offline" id="ai-ind">
+      <div class="dot"></div>
+      <span id="ai-ind-text" style="color:var(--green-dim)">AI: 离线</span>
+    </div>
+    <div class="action-row">
+      <button class="btn-sm" onclick="saveGame()">SAVE</button>
+      <button class="btn-sm" onclick="loadGame()">LOAD</button>
+      <button class="btn-sm" onclick="goToSplash()">MENU</button>
+    </div>
+  </aside>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  NOISE
+// ═══════════════════════════════════════════════════════════════
+(function(){
+  const c=document.getElementById('noise'), ctx=c.getContext('2d');
+  function resize(){ c.width=innerWidth; c.height=innerHeight; }
+  function draw(){
+    const w=c.width,h=c.height,d=ctx.createImageData(w,h),data=d.data;
+    for(let i=0;i<data.length;i+=4){ const v=Math.random()>.5?255:0; data[i]=data[i+1]=data[i+2]=v; data[i+3]=12; }
+    ctx.putImageData(d,0,0); requestAnimationFrame(draw);
+  }
+  addEventListener('resize',resize); resize(); draw();
+})();
+
+// ═══════════════════════════════════════════════════════════════
+//  MODELS & PROVIDERS
+// ═══════════════════════════════════════════════════════════════
+const MODELS = {
+  anthropic: [
+    { id:'claude-opus-4-6',           label:'Claude Opus 4.6       — 最强' },
+    { id:'claude-sonnet-4-6',         label:'Claude Sonnet 4.6     — 均衡 ★' },
+    { id:'claude-haiku-4-5-20251001', label:'Claude Haiku 4.5      — 最快' },
+  ],
+  openai: [
+    { id:'gpt-5.4',       label:'GPT-5.4        — 旗舰' },
+    { id:'gpt-5.4-mini',  label:'GPT-5.4 mini   — 经济' },
+    { id:'o3',            label:'o3              — 深度推理' },
+  ],
+  gemini: [
+    { id:'gemini-2.5-flash',      label:'Gemini 2.5 Flash      — 均衡 ★' },
+    { id:'gemini-2.5-pro',        label:'Gemini 2.5 Pro        — 最强' },
+    { id:'gemini-2.5-flash-lite', label:'Gemini 2.5 Flash Lite — 最快' },
+  ],
+  grok: [
+    { id:'grok-3',      label:'Grok 3       — 旗舰 ★' },
+    { id:'grok-3-mini', label:'Grok 3 Mini  — 推理经济' },
+  ],
+  deepseek: [
+    { id:'deepseek-chat',     label:'DeepSeek V3  — 通用 ★' },
+    { id:'deepseek-reasoner', label:'DeepSeek R1  — 推理' },
+  ],
+  openrouter: [
+    { id:'anthropic/claude-sonnet-4-6',    label:'Claude Sonnet 4.6  (OR)' },
+    { id:'google/gemini-2.5-flash',        label:'Gemini 2.5 Flash   (OR)' },
+    { id:'google/gemini-2.5-pro',          label:'Gemini 2.5 Pro     (OR)' },
+    { id:'deepseek/deepseek-chat-v3-0324', label:'DeepSeek Chat V3   (OR)' },
+    { id:'meta-llama/llama-4-maverick',    label:'Llama 4 Maverick   (OR)' },
+  ],
+  custom: [{ id:'__custom__', label:'（由下方模型名称输入框决定）' }],
+};
+const PROVIDER_ENDPOINTS = {
+  anthropic:  null,
+  openai:     'https://api.openai.com/v1',
+  gemini:     'https://generativelanguage.googleapis.com/v1beta/openai',
+  grok:       'https://api.x.ai/v1',
+  deepseek:   'https://api.deepseek.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+  custom:     null,
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  THEME WORLD PROMPTS
+// ═══════════════════════════════════════════════════════════════
+const THEME_PROMPTS = {
+  cyberpunk: `
+世界观：2087年，NEON-9城市。城市管理AI"MIRA"在第47天突然封锁所有区域，文明秩序崩塌。废弃的数据中心、地下掩体、霓虹残骸构成了这个世界的底色。空气中永远漂浮着臭氧和烧焦金属的气味。
+玩家角色：你是一名"操作员"，从数据中心的废墟中醒来，记忆残缺，手边只有一台闪烁绿光的旧式终端机。你不知道自己在这里呆了多久，也不知道为何还活着。
+关键悬念：MIRA真的叛变了吗？数据中心里隐藏着什么秘密？城市中央塔第99层锁着什么？
+叙事基调：孤独、压抑、赛博朋克末日感。科技的冰冷与人性的残存形成对比。`,
+
+  apocalypse: `
+世界观：感染后第7342天（约20年）。真菌病毒"科迪塞普斯变异株"摧毁了大部分文明。城市成为感染者的领地，少数幸存者聚集在有防御的定居点。免疫者极为罕见，被视为希望也被视为威胁。
+玩家角色：你是免疫者，曾经是一名外科医生。三周前你和女儿艾拉（14岁）失散，她留下纸条说去南边超市找食物。你在废弃医院的手术台上醒来。
+关键悬念：艾拉在哪里？南边的"方舟"聚居点真的安全吗？你的免疫基因是否真的能造出疫苗？
+叙事基调：末日亲情，绝望中的温度。每一个决定都可能是最后的决定。`,
+
+  space: `
+世界观：2156年。深空探索飞船"奥德赛7号"原定前往系外行星。847天前，飞船偏离航线，原因不明。其余六名船员的冬眠舱在未知事件中相继故障，全部离世。
+玩家角色：你是飞船船长，刚从冬眠中苏醒。飞船AI"ARIA"依然运转，但她似乎在刻意回避某些问题。飞船正在向一个未知坐标漂移，那里有一个不属于任何自然现象的信号。
+关键悬念：其他船员是如何死的？ARIA隐瞒了什么？那个信号源是什么？
+叙事基调：宇宙的孤独与浩瀚，未知的恐惧与好奇，对真相的渴望与恐惧并存。`,
+
+  wuxia: `
+世界观：大宋年间。武林大会三日后在帝都开幕，各大门派掌门人已陆续入城。江湖上消失二十年的神器"裂山剑"突然重现，持剑者将成为所有势力的目标——因为传说此剑内藏武林盟主的秘密遗命。
+玩家角色：你是失忆的剑客，在城外古庙中醒来，腰间挂着那把裂山剑，袖中有一封香气残存的密信。伤口有两处，一新一旧，你不知道自己是谁，也不知道为何在此。
+关键悬念：你是谁？裂山剑中藏着什么秘密？那封密信的主人是谁？
+叙事基调：武侠江湖的快意恩仇，身份之谜，义与情的抉择。行文有古典武侠气韵。`,
+
+  cthulhu: `
+世界观：1923年，马萨诸塞州阿卡姆镇。小镇的海岸线旁矗立着一座废弃三十年的旧灯塔。近一个月，镇上三名居民先后失踪，最后目击地点均在灯塔附近。昨夜，灯塔的灯重新亮起。
+玩家角色：你是私家侦探哈罗德·韦伯斯特，受失踪者家属委托来调查。你是理性主义者，不信鬼神。但某些细节——那些几何图案、那种低频共鸣——正在动摇你的认知。
+关键悬念：三人失踪的真相是什么？灯塔里是谁点亮了灯？那些符文意味着什么？
+叙事基调：洛夫克拉夫特式恐惧。理性一点点被未知侵蚀，越调查越逼近不可名状之物。`,
+
+  custom: '', // filled by user
+};
+
+const THEMES_META = {
+  cyberpunk:  { label:'赛博朋克·废土' },
+  apocalypse: { label:'末日·幸存者'   },
+  space:      { label:'星际·孤航'     },
+  wuxia:      { label:'江湖·侠客'     },
+  cthulhu:    { label:'克苏鲁·禁忌'   },
+  custom:     { label:'我的世界'       },
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  AI CONFIG
+// ═══════════════════════════════════════════════════════════════
+let aiCfg = {
+  enabled: true,
+  provider: 'anthropic',
+  model: 'claude-sonnet-4-6',
+  apiKey: '',
+  baseUrl: '',
+  customModel: '',
+  maxTokens: '',
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  SPLASH UI
+// ═══════════════════════════════════════════════════════════════
+let selectedTheme = null;
+
+const splashToggleEl = document.getElementById('splash-ai-toggle');
+splashToggleEl.classList.add('on');
+document.getElementById('ai-fields').style.display = 'block';
+
+document.querySelectorAll('.theme-card').forEach(card=>{
+  card.addEventListener('click',()=>{
+    document.querySelectorAll('.theme-card').forEach(c=>c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedTheme = card.dataset.theme;
+    document.getElementById('custom-theme-box').style.display = selectedTheme==='custom'?'block':'none';
+    checkCanStart();
+  });
+});
+
+document.getElementById('splash-ai-toggle').addEventListener('click',()=>{
+  const t=splashToggleEl;
+  t.classList.toggle('on');
+  aiCfg.enabled = t.classList.contains('on');
+  document.getElementById('ai-fields').style.display = aiCfg.enabled?'block':'none';
+  checkCanStart();
+});
+
+document.getElementById('provider-select').addEventListener('change',function(){
+  aiCfg.provider=this.value; populateModels();
+  document.getElementById('custom-base-url-row').style.display = this.value==='custom'?'block':'none';
+  checkCanStart();
+});
+
+function populateModels(){
+  const sel=document.getElementById('model-select'); sel.innerHTML='';
+  MODELS[aiCfg.provider].forEach(m=>{ const o=document.createElement('option'); o.value=m.id; o.textContent=m.label; sel.appendChild(o); });
+  aiCfg.model=MODELS[aiCfg.provider][0].id;
+}
+populateModels();
+
+document.getElementById('model-select').addEventListener('change',function(){ aiCfg.model=this.value; });
+
+document.getElementById('splash-api-key').addEventListener('input',function(){
+  aiCfg.apiKey=this.value.trim();
+  const st=document.getElementById('splash-ai-status');
+  if(!aiCfg.apiKey){ st.className='ai-status-note'; st.textContent='等待输入 Key...'; }
+  else { st.className='ai-status-note ok'; st.textContent='Key 已输入 ✓'; }
+  checkCanStart();
+});
+document.getElementById('max-tokens-input').addEventListener('input',function(){
+  aiCfg.maxTokens=this.value.trim();
+});
+document.getElementById('base-url-input').addEventListener('input',function(){ aiCfg.baseUrl=this.value.trim(); checkCanStart(); });
+document.getElementById('custom-model-input').addEventListener('input',function(){ aiCfg.customModel=this.value.trim(); checkCanStart(); });
+document.getElementById('custom-theme-input').addEventListener('input', checkCanStart);
+
+function checkCanStart(){
+  const btn=document.getElementById('btn-start');
+  if(!selectedTheme){ btn.disabled=true; return; }
+  if(selectedTheme==='custom'&&!document.getElementById('custom-theme-input').value.trim()){ btn.disabled=true; return; }
+  if(!aiCfg.enabled){ btn.disabled=true; return; }
+  if(!aiCfg.apiKey){ btn.disabled=true; return; }
+  if(aiCfg.provider==='custom'&&(!aiCfg.baseUrl||!aiCfg.customModel)){ btn.disabled=true; return; }
+  btn.disabled=false;
+}
+
+document.getElementById('btn-start').addEventListener('click', startGame);
+
+function goToSplash(){
+  document.getElementById('app').style.display='none';
+  document.getElementById('splash').style.display='flex';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════════════════════
+let state = {};
+
+function resetState(theme){
+  state = {
+    theme,
+    customPrompt: document.getElementById('custom-theme-input').value.trim(),
+    turn: 0,
+    hp: 100, sanity: 100, credits: 500,
+    inventory: [],
+    log: [],
+    aiHistory: [],  // full conversation history for AI
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════════════════════════════
+function clearStoryPanel(){
+  const panel=document.getElementById('story-panel');
+  const th=document.getElementById('thinking');
+  [...panel.children].forEach(el=>{ if(el!==th) el.remove(); });
+}
+
+function typeText(el, text, speed=20){
+  return new Promise(resolve=>{
+    let i=0; el.textContent='';
+    const cur=document.createElement('span'); cur.className='cursor'; el.appendChild(cur);
+    function tick(){
+      if(i<text.length){ el.insertBefore(document.createTextNode(text[i]),cur); i++; setTimeout(tick,speed+(Math.random()*8-4)); }
+      else { cur.remove(); resolve(); }
+    }
+    tick();
+  });
+}
+
+function addBlock(text, type='story', instant=false){
+  const panel=document.getElementById('story-panel');
+  const th=document.getElementById('thinking');
+  const block=document.createElement('div');
+  block.className='story-block'+(type!=='story'?' '+type:'');
+  const body=document.createElement('div');
+  block.appendChild(body);
+  panel.insertBefore(block, th); // insert before thinking indicator
+  panel.scrollTop=panel.scrollHeight;
+  if(instant){ body.textContent=text; return Promise.resolve(); }
+  return typeText(body,text,type==='player'?0:20).then(()=>{ panel.scrollTop=panel.scrollHeight; });
+}
+
+function setInputEnabled(enabled){
+  const list=document.getElementById('choices-list');
+  [...list.querySelectorAll('.choice-btn')].forEach(b=>b.disabled=!enabled);
+  document.getElementById('action-input').disabled=!enabled;
+  document.getElementById('action-submit').disabled=!enabled;
+}
+
+function setChoices(choices){
+  const list=document.getElementById('choices-list');
+  list.innerHTML='';
+  (choices||[]).forEach(c=>{
+    const btn=document.createElement('button'); btn.className='choice-btn';
+    btn.textContent=c.text||c;
+    btn.addEventListener('click',()=>handleTurn(c.text||c));
+    list.appendChild(btn);
+  });
+}
+
+function updateStats(){
+  const hp=Math.max(0,state.hp), san=Math.max(0,state.sanity);
+  document.getElementById('stat-hp').style.width=hp+'%';
+  document.getElementById('stat-hp-val').textContent=hp;
+  document.getElementById('stat-sanity').style.width=san+'%';
+  document.getElementById('stat-sanity-val').textContent=san;
+  document.getElementById('stat-credits').style.width=Math.min(100,(state.credits/2000)*100)+'%';
+  document.getElementById('stat-credits-val').textContent=state.credits;
+  document.getElementById('turn-counter').textContent='TURN: '+state.turn;
+  const hf=document.getElementById('stat-hp');
+  if(hp<=30){hf.style.background='var(--red)';hf.style.boxShadow='0 0 5px var(--red)';}
+  else if(hp<=60){hf.style.background='var(--amber)';hf.style.boxShadow='0 0 5px var(--amber)';}
+  else{hf.style.background='var(--green)';hf.style.boxShadow='0 0 5px var(--green)';}
+}
+
+function addLog(entry){
+  state.log.push(entry);
+  const list=document.getElementById('log-list');
+  const el=document.createElement('div'); el.className='log-entry'; el.textContent=entry; list.appendChild(el);
+  while(list.children.length>15) list.removeChild(list.firstChild);
+}
+
+function updateInventory(){
+  const list=document.getElementById('inventory-list'); list.innerHTML='';
+  if(!state.inventory.length){ list.innerHTML='<span class="inv-empty">空</span>'; return; }
+  state.inventory.forEach(item=>{ const el=document.createElement('div'); el.className='inv-item'; el.textContent=item; list.appendChild(el); });
+}
+
+function setAIIndicator(status, label){
+  const el=document.getElementById('ai-ind');
+  const txt=document.getElementById('ai-ind-text');
+  el.className='ai-ind '+status;
+  txt.textContent=label||( status==='online'?`AI: ${aiCfg.provider.toUpperCase()} ✓` : status==='error'?'AI: 错误':'AI: 离线' );
+}
+
+const $thinking = () => document.getElementById('thinking');
+
+// ═══════════════════════════════════════════════════════════════
+//  BUILD REQUEST
+// ═══════════════════════════════════════════════════════════════
+function getConfiguredMaxTokens(){
+  const n = Number.parseInt(aiCfg.maxTokens, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function buildRequest(systemPrompt, messages){
+  const configuredMaxTokens = getConfiguredMaxTokens();
+  if(aiCfg.provider==='anthropic'){
+    return {
+      url:'https://api.anthropic.com/v1/messages',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key':aiCfg.apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true',
+      },
+      body:JSON.stringify({
+        model:aiCfg.model,
+        max_tokens: configuredMaxTokens || 8192,
+        system:systemPrompt,
+        messages,
+      }),
+    };
+  }
+  const baseUrl = aiCfg.provider==='custom' ? aiCfg.baseUrl : PROVIDER_ENDPOINTS[aiCfg.provider];
+  const model   = aiCfg.provider==='custom' ? aiCfg.customModel : aiCfg.model;
+  const url     = baseUrl.replace(/\/+$/,'')+'/chat/completions';
+  const headers = { 'Content-Type':'application/json', 'Authorization':'Bearer '+aiCfg.apiKey };
+  if(aiCfg.provider==='openrouter'){ headers['HTTP-Referer']=location.href; headers['X-Title']='The Last Terminal'; }
+  const payload = { model, messages:[{role:'system',content:systemPrompt},...messages] };
+  if(configuredMaxTokens) payload.max_tokens = configuredMaxTokens;
+  return { url, headers, body: JSON.stringify(payload) };
+}
+
+async function fetchWithTimeout(url, opts, ms=60000){
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),ms);
+  try {
+    const res=await fetch(url,{...opts,signal:ctrl.signal});
+    clearTimeout(timer); return res;
+  } catch(e){ clearTimeout(timer); throw e.name==='AbortError'?new Error('请求超时（>60s）'):e; }
+}
+
+function parseResponse(data){
+  return data.content?.[0]?.text || data.choices?.[0]?.message?.content || null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  AI SYSTEM PROMPT BUILDER
+// ═══════════════════════════════════════════════════════════════
+function buildSystemPrompt(){
+  const worldPrompt = state.theme==='custom'
+    ? `玩家自定义世界观：\n${state.customPrompt}`
+    : THEME_PROMPTS[state.theme];
+
+  return `你是一个沉浸式互动文字冒险游戏的专职叙事引擎，目标是让读者以“你”的视角深度代入。
+
+${worldPrompt}
+
+═══ 叙事规则 ═══
+1. 始终使用第二人称“你”叙述，强化临场感与参与感
+2. 每回合给出 2~4 段剧情，包含可感知细节（视觉/声音/气味/触感/温度）与明确悬念推进
+3. 严格承接玩家刚刚的行动，不要忽略玩家输入，不要重置场景
+4. 输出的可选行动必须和本回合剧情强相关，且彼此有真实差异
+5. 不要输出任何 OOC 说明、提示词解释、括号元信息
+6. 玩家可以手动输入任意行动；当玩家手动输入时，必须当作有效指令继续推进
+
+═══ 输出格式（必须严格 JSON） ═══
+只输出 JSON 对象，不要 Markdown，不要代码块，不要额外文字：
+{
+  "narrative": "剧情正文（2~4段）",
+  "choices": ["行动1", "行动2", "行动3"],
+  "inventory": {
+    "gained": ["可选，获得物品列表"],
+    "lost": ["可选，失去物品列表"]
+  }
+}
+
+约束：
+- choices 至少 3 个，最多 5 个
+- 每个 choice 必须是可执行动作，不要抽象空话
+- narrative 内不要再写 > 选项行`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  FETCH AI TURN
+// ═══════════════════════════════════════════════════════════════
+async function fetchAITurn(){
+  const systemPrompt = buildSystemPrompt();
+  const messages = state.aiHistory;
+  const req = buildRequest(systemPrompt, messages);
+
+  console.group('%c[AI] fetchAITurn', 'color:#00cfff;font-weight:bold');
+  console.log('Provider:', aiCfg.provider, '| Model:', aiCfg.model);
+  console.log('URL:', req.url);
+  console.log('History turns:', state.aiHistory.length);
+  console.groupEnd();
+
+  const res = await fetchWithTimeout(req.url, { method:'POST', headers:req.headers, body:req.body });
+  const rawText = await res.text();
+
+  console.group('%c[AI] Response', 'color:#00cfff');
+  console.log('Status:', res.status);
+  console.log('Raw:', rawText);
+  console.groupEnd();
+
+  if(!res.ok){
+    let msg=`HTTP ${res.status}`;
+    try { msg=JSON.parse(rawText)?.error?.message||msg; } catch(_){}
+    throw new Error(msg);
+  }
+
+  const data = JSON.parse(rawText);
+  const text = parseResponse(data);
+  if(!text) throw new Error('AI 返回内容为空');
+
+  console.log('%c[AI] Text:', 'color:#00ff41', text.substring(0,100)+'...');
+  return text;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PARSE AI RESPONSE → {text, choices, items}
+// ═══════════════════════════════════════════════════════════════
+function normalizeChoices(arr){
+  const list = Array.isArray(arr) ? arr : [];
+  const uniq = [];
+  list.forEach(item=>{
+    const text = String(item || '').trim();
+    if(text && !uniq.includes(text)) uniq.push(text);
+  });
+  return uniq.slice(0, 5).map(text=>({ text }));
+}
+
+function extractJSONObject(raw){
+  const text = String(raw || '').trim();
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if(fence) return fence[1].trim();
+
+  const first = text.indexOf('{');
+  const last = text.lastIndexOf('}');
+  if(first !== -1 && last > first) return text.slice(first, last + 1);
+  return null;
+}
+
+function parseLegacyResponse(raw){
+  const lines = String(raw || '').split('\n').map(l=>l.trim()).filter(Boolean);
+  const choiceLines = lines.filter(l=>l.startsWith('>'));
+  const storyLines  = lines.filter(l=>!l.startsWith('>'));
+  const gained=[], lost=[];
+
+  storyLines.forEach(l=>{
+    const g=l.match(/\[获得[:：]\s*(.+?)\]/);
+    if(g) gained.push(g[1].trim());
+    const ls=l.match(/\[失去[:：]\s*(.+?)\]/);
+    if(ls) lost.push(ls[1].trim());
+  });
+
+  return {
+    text: storyLines.join('\n').trim(),
+    choices: normalizeChoices(choiceLines.map(l=>l.replace(/^>\s*/,'').trim())),
+    gained,
+    lost,
+  };
+}
+
+function parseAIResponse(raw){
+  const jsonText = extractJSONObject(raw);
+  if(jsonText){
+    try {
+      const obj = JSON.parse(jsonText);
+      const narrative = String(obj.narrative || '').trim();
+      const choices = normalizeChoices(obj.choices);
+      const inventory = obj.inventory && typeof obj.inventory === 'object' ? obj.inventory : {};
+      const gained = Array.isArray(inventory.gained) ? inventory.gained.map(v=>String(v).trim()).filter(Boolean) : [];
+      const lost = Array.isArray(inventory.lost) ? inventory.lost.map(v=>String(v).trim()).filter(Boolean) : [];
+      if(narrative){
+        return { text: narrative, choices, gained, lost };
+      }
+    } catch (_e) {
+      // fallback to legacy parsing
+    }
+  }
+
+  return parseLegacyResponse(raw);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HANDLE TURN (core game loop)
+// ═══════════════════════════════════════════════════════════════
+async function handleTurn(playerAction){
+  setInputEnabled(false);
+  setChoices([]);
+  state.turn++;
+
+  // Show player action
+  await addBlock('> ' + playerAction, 'player', true);
+
+  // Add to AI history
+  state.aiHistory.push({ role:'user', content: playerAction });
+
+  // Fetch AI
+  $thinking().style.display='flex';
+  let raw=null;
+  try {
+    raw = await fetchAITurn();
+    setAIIndicator('online');
+  } catch(e) {
+    console.error('[AI] Error:', e.message);
+    setAIIndicator('error', 'ERR: '+e.message.slice(0,30));
+    await addBlock('[AI 生成失败: ' + e.message + ']\n请检查 API Key 和网络连接', 'err', true);
+    setChoices([{ text:'重试' }]);
+    setInputEnabled(true);
+    $thinking().style.display='none';
+    return;
+  } finally {
+    $thinking().style.display='none';
+  }
+
+  // Add AI response to history
+  state.aiHistory.push({ role:'assistant', content: raw });
+
+  // Parse
+  const { text, choices, gained, lost } = parseAIResponse(raw);
+
+  // Apply inventory changes
+  gained.forEach(item=>{ if(!state.inventory.includes(item)){ state.inventory.push(item); addLog('获得: '+item); } });
+  lost.forEach(item=>{ state.inventory=state.inventory.filter(i=>i!==item); addLog('失去: '+item); });
+  updateInventory();
+  updateStats();
+
+  // Display story
+  await addBlock(text);
+
+  // Set choices + re-enable input
+  setChoices(choices.length>0 ? choices : [
+    { text:'观察周围环境，寻找新的线索' },
+    { text:'与眼前目标互动，试探其反应' },
+    { text:'整理当前局势并制定下一步计划' },
+  ]);
+  setInputEnabled(true);
+  document.getElementById('action-input').value='';
+  document.getElementById('story-panel').scrollTop=99999;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  START GAME
+// ═══════════════════════════════════════════════════════════════
+async function startGame(){
+  const theme = selectedTheme;
+  resetState(theme);
+
+  document.getElementById('splash').style.display='none';
+  document.getElementById('app').style.display='grid';
+  document.getElementById('h-theme').textContent = THEMES_META[theme].label;
+  document.getElementById('mode-display').textContent = 'MODE: AI';
+  document.getElementById('log-list').innerHTML='';
+  document.getElementById('choices-list').innerHTML='';
+
+  clearStoryPanel();
+  updateStats(); updateInventory();
+
+  if(!aiCfg.enabled){
+    setAIIndicator('offline');
+    await addBlock('[AI 未开启，无法开始游戏。请返回主菜单开启 AI。]', 'err', true);
+    setChoices([{text:'返回主菜单'}]);
+    document.getElementById('choices-list').firstChild?.addEventListener('click', goToSplash);
+    return;
+  }
+
+  setAIIndicator('online');
+
+  // Boot message
+  await addBlock('[系统启动 // '+THEMES_META[theme].label.toUpperCase()+']', 'sys', true);
+
+  // Push the opening instruction to history
+  state.aiHistory.push({
+    role: 'user',
+    content: '开始游戏。请生成开场剧情，并严格按约定 JSON 返回 narrative + choices + inventory。'
+  });
+
+  $thinking().style.display='flex';
+  let raw=null;
+  try {
+    raw = await fetchAITurn();
+    setAIIndicator('online');
+  } catch(e){
+    $thinking().style.display='none';
+    setAIIndicator('error', e.message.slice(0,30));
+    await addBlock('[启动失败: '+e.message+']\n请检查 API Key 和网络。', 'err', true);
+    setChoices([{text:'返回主菜单'}]);
+    document.getElementById('choices-list').firstChild?.addEventListener('click',goToSplash);
+    return;
+  } finally {
+    $thinking().style.display='none';
+  }
+
+  state.aiHistory.push({ role:'assistant', content: raw });
+  const { text, choices, gained, lost } = parseAIResponse(raw);
+  gained.forEach(item=>{ if(!state.inventory.includes(item)){ state.inventory.push(item); addLog('获得: '+item); } });
+  updateInventory();
+
+  await addBlock(text);
+  setChoices(choices.length>0 ? choices : [
+    { text:'观察周围环境，寻找新的线索' },
+    { text:'与眼前目标互动，试探其反应' },
+    { text:'整理当前局势并制定下一步计划' },
+  ]);
+  setInputEnabled(true);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TEXT INPUT
+// ═══════════════════════════════════════════════════════════════
+document.getElementById('action-submit').addEventListener('click',()=>{
+  const val=document.getElementById('action-input').value.trim();
+  if(val) handleTurn(val);
+});
+document.getElementById('action-input').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){ e.preventDefault(); const v=document.getElementById('action-input').value.trim(); if(v) handleTurn(v); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  SAVE / LOAD
+// ═══════════════════════════════════════════════════════════════
+function saveGame(){
+  try {
+    localStorage.setItem('retro_save', JSON.stringify({
+      theme:state.theme, customPrompt:state.customPrompt,
+      turn:state.turn, hp:state.hp, sanity:state.sanity, credits:state.credits,
+      inventory:state.inventory, log:state.log,
+      aiHistory: state.aiHistory,
+    }));
+    addBlock('[存档成功 · '+new Date().toLocaleTimeString()+']','sys',true);
+  } catch (e) {
+    addBlock('[存档失败: 对话历史过大或浏览器存储已满]','err',true);
+    console.error('saveGame failed:', e);
+  }
+}
+
+function loadGame(){
+  const raw=localStorage.getItem('retro_save');
+  if(!raw){ addBlock('[没有找到存档]','err',true); return; }
+  const s=JSON.parse(raw);
+  Object.assign(state,s);
+  clearStoryPanel();
+  document.getElementById('log-list').innerHTML='';
+  updateStats(); updateInventory();
+  s.log.slice(-15).forEach(e=>{ const el=document.createElement('div'); el.className='log-entry'; el.textContent=e; document.getElementById('log-list').appendChild(el); });
+  addBlock('[读取存档 · '+THEMES_META[state.theme]?.label+' · TURN '+state.turn+']','sys',true);
+
+  // Show last AI message if available
+  const lastAI = [...state.aiHistory].reverse().find(m=>m.role==='assistant');
+  if(lastAI){
+    const {text, choices} = parseAIResponse(lastAI.content);
+    addBlock(text,'story',true);
+    setChoices(choices.length>0?choices:[
+      { text:'观察周围环境，寻找新的线索' },
+      { text:'与眼前目标互动，试探其反应' },
+      { text:'整理当前局势并制定下一步计划' },
+    ]);
+    setInputEnabled(true);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  KEYBOARD
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('keydown', e=>{
+  if(e.ctrlKey&&e.key==='s'){ e.preventDefault(); saveGame(); }
+  if(e.ctrlKey&&e.key==='l'){ e.preventDefault(); loadGame(); }
+  if(document.getElementById('action-input')===document.activeElement) return;
+  const btns=[...document.querySelectorAll('.choice-btn:not([disabled])')];
+  const n=parseInt(e.key);
+  if(n>=1&&n<=btns.length) btns[n-1].click();
+});
+</script>
+</body>
+</html>
